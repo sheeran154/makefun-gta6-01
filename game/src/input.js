@@ -1,53 +1,62 @@
-// Keyboard and pointer input. Held keys give a steering direction; one-shot presses (start or
-// restart, pause) are queued as bit flags and taken once by the loop, so a press between two
-// frames is never lost and never counted twice.
+// input.js — keyboard + mouse state for PORT SOLARA.
+// One job: track what the player is pressing, nothing else.
+// Held keys live in `keys`; a quick tap also sets an edge flag in `pressed`
+// that stays until consume() reads it, so a tap between frames is never lost.
 
-export const ACTION_CONFIRM = 1;
-export const ACTION_PAUSE = 2;
+export const keys = Object.create(null);
+export const pressed = Object.create(null);
+export const mouse = { x: 0, y: 0, down: false, clicked: false };
 
-const LEFT = new Set(['ArrowLeft', 'KeyA']);
-const RIGHT = new Set(['ArrowRight', 'KeyD']);
-const CONFIRM = new Set(['Space', 'Enter']);
-const PAUSE = new Set(['KeyP', 'Escape']);
+const CODE_MAP = {
+  KeyW: 'up', ArrowUp: 'up',
+  KeyS: 'down', ArrowDown: 'down',
+  KeyA: 'left', ArrowLeft: 'left',
+  KeyD: 'right', ArrowRight: 'right',
+  ShiftLeft: 'run', ShiftRight: 'run',
+  Space: 'brake',
+  KeyE: 'enter',
+  KeyM: 'phone',
+  Escape: 'pause',
+  KeyR: 'respawn',
+};
 
-export function createInput(target) {
-  let left = false;
-  let right = false;
-  let actions = 0;
-
-  window.addEventListener('keydown', (event) => {
-    if (LEFT.has(event.code)) left = true;
-    else if (RIGHT.has(event.code)) right = true;
-    else if (CONFIRM.has(event.code)) {
-      if (!event.repeat) actions |= ACTION_CONFIRM;
-    } else if (PAUSE.has(event.code)) {
-      if (!event.repeat) actions |= ACTION_PAUSE;
-    } else return;
-    event.preventDefault();
+export function initInput(canvas) {
+  window.addEventListener('keydown', (e) => {
+    const name = CODE_MAP[e.code];
+    if (name) {
+      keys[name] = true;
+      pressed[name] = true;
+      if (name === 'brake' || name === 'pause') e.preventDefault();
+    }
+    if (e.code === 'Enter') { keys.enter = true; pressed.enter = true; }
   });
-  window.addEventListener('keyup', (event) => {
-    if (LEFT.has(event.code)) left = false;
-    else if (RIGHT.has(event.code)) right = false;
+  window.addEventListener('keyup', (e) => {
+    const name = CODE_MAP[e.code];
+    if (name) keys[name] = false;
+    if (e.code === 'Enter') keys.enter = false;
   });
-  // A key released while the tab is hidden never sends keyup: let go of everything on blur.
-  window.addEventListener('blur', () => {
-    left = false;
-    right = false;
+  canvas.addEventListener('mousemove', (e) => {
+    const r = canvas.getBoundingClientRect();
+    mouse.x = (e.clientX - r.left) * (canvas.width / r.width);
+    mouse.y = (e.clientY - r.top) * (canvas.height / r.height);
   });
-  target.addEventListener('pointerdown', () => {
-    actions |= ACTION_CONFIRM;
+  canvas.addEventListener('mousedown', (e) => {
+    if (e.button === 0) { mouse.down = true; mouse.clicked = true; }
   });
+  window.addEventListener('mouseup', (e) => {
+    if (e.button === 0) mouse.down = false;
+  });
+  // Keep focus so keys keep working after a click.
+  canvas.addEventListener('click', () => canvas.focus());
+}
 
-  return {
-    /** -1 for left, 1 for right, 0 for neither or both. */
-    direction() {
-      return (right ? 1 : 0) - (left ? 1 : 0);
-    },
-    /** The one-shot presses since the last call, as ACTION_* flags. */
-    takeActions() {
-      const taken = actions;
-      actions = 0;
-      return taken;
-    },
-  };
+/** True once for a tap of the key; call after reading. */
+export function consume(name) {
+  if (pressed[name]) { pressed[name] = false; return true; }
+  return false;
+}
+
+export function consumeClick() {
+  if (mouse.clicked) { mouse.clicked = false; return true; }
+  return false;
 }
